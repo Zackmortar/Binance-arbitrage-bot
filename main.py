@@ -83,6 +83,7 @@ def updatePrices():
         baseticker = 0
         index = 0
         total = 0
+        fee = 0
         for x in tickerDf["symbol"]:
             if x == comb["intermediate"]+comb["base"]:
                 intbase = tickerDf["price"][index]
@@ -97,16 +98,17 @@ def updatePrices():
             if x == comb["ticker"]+comb["base"]:
                 baseticker = tickerDf["price"][index]
             index += 1
-        total=  float(startingcash)/float(intbase) #BTC
-        total= total/float(tickerint)              #ETH
-        total= total*float(baseticker)             #USDT
-        if total - startingcash > ((0.5*startingcash)/100):
-            hits.append(comb["intermediate"]+comb["base"]+" "+str(intbase)+","+comb["ticker"]+comb["intermediate"]+" "+str(tickerint)+","+comb["ticker"]+comb["base"]+" "+str(baseticker)+" ,final cash="+str(total-startingcash))
-        for z in hits:
-            print(z)
+        total= (float(startingcash)/float(intbase))-(total*0.01) #BTC
+        total= total/float(tickerint)-(total*0.01)               #ETH
+        total= total*float(baseticker)-(total*0.01)              #USDT
+        hits.append([comb["intermediate"]+comb["base"],comb["ticker"]+comb["intermediate"],comb["ticker"]+comb["base"],str(intbase),str(tickerint),str(baseticker),str(total-startingcash-((0.075*3*startingcash)/100)),"BBS"])
+    hitsDf=pd.DataFrame(hits,columns=["INTBASE","TICKERINT","TICKERBASE","INTBASEPRICE","TICKERINTPRICE","TICKERBASEPRICE","PROFIT","STRATEGY"])
+    hitsDf.sort_values(by="PROFIT", ascending=False,inplace=True)
+    print(hitsDf)
         #print(comb["intermediate"]+comb["base"]+" "+str(intbase)+","+comb["ticker"]+comb["intermediate"]+" "+str(tickerint)+","+comb["ticker"]+comb["base"]+" "+str(baseticker)+" ,final cash="+str(total-startingcash))
     print("Updated, time spent: ",time.time() - start_time,"s")
-updatePrices()      
+while True:
+    updatePrices()      
 # @app.route('/dataframe')
 # def dataframe():
 #     data = {}
