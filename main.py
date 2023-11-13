@@ -1,3 +1,5 @@
+# by Zakaria Mourtaban
+# Binance-Arbitrage-Bot
 import json
 import os
 from binance.client import Client
@@ -5,37 +7,24 @@ import pandas as pd
 from urllib.request import urlopen
 import pickle
 import time
-import math
-# from flask import Flask, render_template
-# app = Flask(__name__)
 start_time = time.time()
-# api_key = os.environ['Bo4Nh8RlK72hJzInQ4Evb7VGjJBZfzt7ekTrvfYbaYyahH9AwPWZvNzgMOuCP4us']
-# api_secret=os.environ['J4CcS6jR3kIxUszzvOCJ6tjeiz1uZzN87lNTrQw9yLjcm6YFZqQ6PAZbFbrYMtst']
 #!replace with real api key on actual try
-client = Client('qnlt6YgUVSTnhW1Y2QqieU9vFzhR1lfN6Le42s7ItydmipJVRLJ5mYYjQiEqS4iZ',
-                '18pEZGy5dAyxdm6QZ3jkI4aYCCoDukwc6LiFD5OpoYi2C1Bhu3eOUfiSYWZ6Uc03', testnet=True)
-# print(client.get_account())
+client = Client(api_key="YOUR_API_KEY",
+                api_secret='YOUR_SECRET_KEY',tld='com')
+# was going to get used in a calculation
 start_usdt = 0
-client_info = client.get_account()
-for x in client_info["balances"]:
-    if x["asset"] == 'USDT':
-        start_usdt = float(x["free"])
-        break
-# https://api.binance.com/api/v1/exchangeInfo
 binanceResponce = urlopen("https://api.binance.com/api/v1/exchangeInfo")
+# grab binance exchange info
 binanceData = json.loads(binanceResponce.read())
 binanceDf = pd.DataFrame.from_dict(binanceData["symbols"])
-# for x in binanceData["symbols"]:
-#     print(x['baseAsset']+" "+x['quoteAsset'])
-print("initialization finished, time spent: ", time.time() - start_time, "s")
+# load it into a dataframe
 del binanceDf['filters']
-# Assuming you have a DataFrame named "binanceDf"
-# Find the indices of rows with "BREAK" in the 'status' column
+# delete a row
 indices_to_drop = binanceDf[binanceDf['status'] == 'BREAK'].index
-# Remove rows with the found indices
-binanceDf = binanceDf.drop(indices_to_drop)
-# Reset the index if needed
+# "break" in status means that the symbol is untradable
+binanceDf = binanceDf.drop(indices_to_drop,)
 binanceDf = binanceDf.reset_index(drop=True)
+print(binanceDf)
 # indexing for combinations
 index = []
 counter = 0
@@ -48,30 +37,24 @@ ArbPossibilities = []
 start_time = time.time()
 base = "USDT"
 #!starting cash = 1 for testing purposes does not work there is a minimum order value you should match
-startingcash = 10
-
-
+startingcash = 8
+print("initialization finished, time spent: ", time.time() - start_time, "s")
 def arbitrageFinder():
+    #this function is used to find every single proper combination of arbitrage opportunities in BBS order
     combinations = []
     b = 0
     for sym1 in binanceDf["indecies"]:
         sym1_token1 = binanceDf["baseAsset"][sym1]
         sym1_token2 = binanceDf["quoteAsset"][sym1]
-        # baseasset1
-        # quotesset1
         if (sym1_token2 == base):
             for sym2 in binanceDf["indecies"]:
                 sym2_token1 = binanceDf["baseAsset"][sym2]
                 sym2_token2 = binanceDf["quoteAsset"][sym2]
-                # baseasset2
-                # quoteasset2
                 b = 0
                 if (sym1_token1 == sym2_token2):
                     for sym3 in binanceDf["indecies"]:
                         sym3_token1 = binanceDf["baseAsset"][sym3]
                         sym3_token2 = binanceDf["quoteAsset"][sym3]
-                        # baseasset3
-                        # quoteasset3
                         b += 1
                         if ((sym2_token1 == sym3_token1) and (sym3_token2 == sym1_token2)):
                             combination = {
@@ -83,7 +66,8 @@ def arbitrageFinder():
                             combinations.append(combination)
     return combinations
 
-
+#this part of the code caches the results in a file so it doesnt need to be calculated on every execute
+#when using the same base asset
 if os.path.isfile(base+".txt"):
     with open(base+".txt", 'rb') as f:
         combs = pickle.load(f)
@@ -96,17 +80,16 @@ print("arb finder has finished, time spent: "+str(time.time() - start_time)+"s")
 
 
 def updatePrices():
+    #this funciton tests every opportunity for profit locally in a way that doesnt force us to wait for a server response
     start_time = time.time()
     tickerresponse = urlopen("https://api.binance.com/api/v3/ticker/price")
     tickerData = json.loads(tickerresponse.read())
     tickerDf = pd.DataFrame.from_dict(tickerData)
     # Find the indices of rows with "BREAK" in the 'status' column
     indices_to_drop = tickerDf[tickerDf['price'] == 0].index
-# Remove rows with the found indices
+    # Remove rows with the found indices
     tickerDf = tickerDf.drop(indices_to_drop)
-    indices_to_drop = tickerDf[tickerDf['symbol'] == 'SHIB'].index
-    tickerDf = tickerDf.drop(indices_to_drop)
-# Reset the index if needed
+    # Reset the index if needed
     tickerDf = tickerDf.reset_index(drop=True)
     hits = []
     for comb in combs:
@@ -131,102 +114,109 @@ def updatePrices():
                 baseticker = tickerDf["price"][index]
             index += 1
         try:
-            total = (float(startingcash)/float(intbase))-(total*0.01)  # BTC
-            total = (total/float(tickerint))-(total*0.01)  # ETH
-            total = (total*float(baseticker))-(total*0.01)
+            total = (float(startingcash)/float(intbase))-(float(startingcash)/float(intbase))*0.01  # BTC
+            total = (total/float(tickerint))-(total/float(tickerint))*0.01 # ETH
+            total = (total*float(baseticker))-(total*float(baseticker))*0.01#0.01 is the fee for every transaction
         except:
             print(Exception)  # USDT
-        hits.append([comb["intermediate"]+comb["base"], comb["ticker"]+comb["intermediate"], comb["ticker"]+comb["base"], str(intbase),
-                    str(tickerint), str(baseticker), ("%.17f" % (total-startingcash-((0.075*3*startingcash)/100))).rstrip('0').rstrip('.'), "BBS"])
-    hitsDf = pd.DataFrame(hits, columns=["INTBASE", "TICKERINT", "TICKERBASE",
+        #this here puts the details of the hit in the hits array
+        hits.append([comb["intermediate"],comb["ticker"],comb["base"],comb["intermediate"]+comb["base"], comb["ticker"]+comb["intermediate"], comb["ticker"]+comb["base"], str(intbase),str(tickerint), str(baseticker), ("%.5f" % (total-startingcash-((0.001*3*startingcash)))).rstrip('0').rstrip('.'), "BBS"])
+    hitsDf = pd.DataFrame(hits, columns=["INT","TICKER","BASE","INTBASE", "TICKERINT", "TICKERBASE",
                           "INTBASEPRICE", "TICKERINTPRICE", "TICKERBASEPRICE", "PROFIT", "STRATEGY"])
     hitsDf.sort_values(by="PROFIT", ascending=False,
                        inplace=True, ignore_index=True)
+    print(str(time.time() - start_time))
     print(hitsDf)
     return hitsDf.loc[0].to_dict()
-
-
 while True:
     start_time = time.time()
-    final_usdt = 0
     tophit = updatePrices()
-    if float(tophit['PROFIT']) > 0.01:
-        pairInfoResponse = urlopen(
-            "https://api.binance.com/api/v3/exchangeInfo?symbol="+tophit['INTBASE'])
+    #we check if the profit is above a certain amount
+    if float(tophit['PROFIT']) > (startingcash*4*0.001):
+        pairInfoResponse = urlopen("https://api.binance.com/api/v3/exchangeInfo?symbol="+tophit['INTBASE'])
         pairInfo = json.loads(pairInfoResponse.read())
-        stepsize = pairInfo["symbols"][0]["filters"][1]["stepSize"]
+        stepsize = float(pairInfo["symbols"][0]["filters"][1]["stepSize"])
         roundnum = 0
         roundnumtemp = 1
         while True:
-            if roundnumtemp == float(stepsize):
+            if roundnumtemp == stepsize:
                 break
             roundnumtemp = roundnumtemp/10
             roundnum += 1
-        amount = round(
-            (float(startingcash)/float(tophit['INTBASEPRICE'])), roundnum)
-        time.sleep(0.2)
+        amount1 = round((float(startingcash)/float(tophit['INTBASEPRICE'])), roundnum)
+        #!make all orders limit orders man fuck the execution complexities
+        # order_limit_buy(symbol=formatted_name, 
+        #                                              quantity=amount, 
+        #                                              price=fiat_price)
         order1 = client.create_order(
             symbol=tophit['INTBASE'],
             side="BUY",
             type="MARKET",
-            quantity=amount
+            quoteOrderQty=amount1,
         )
-        pairInfoResponse = urlopen(
-            "https://api.binance.com/api/v3/exchangeInfo?symbol="+tophit['TICKERINT'])
-        pairInfo = json.loads(pairInfoResponse.read())
-        stepsize = pairInfo["symbols"][0]["filters"][1]["stepSize"]
-        roundnum = 0
-        roundnumtemp = 1
         while True:
-            if roundnumtemp == float(stepsize):
-                break
-            roundnumtemp = roundnumtemp/10
-            roundnum += 1
-        amount = round(
-            ((float(startingcash)/float(tophit['INTBASEPRICE']))/float(tophit['TICKERINTPRICE'])), roundnum)
-        time.sleep(0.2)
-        order2 = client.create_order(
-            symbol=tophit['TICKERINT'],
-            side="BUY",
-            type="MARKET",
-            quantity=amount
-        )
-        pairInfoResponse = urlopen(
-            "https://api.binance.com/api/v3/exchangeInfo?symbol="+tophit['TICKERBASE'])
-        pairInfo = json.loads(pairInfoResponse.read())
-        stepsize = pairInfo["symbols"][0]["filters"][1]["stepSize"]
-        roundnum = 0
-        roundnumtemp = 1
-        while True:
-            if roundnumtemp == float(stepsize):
-                break
-            roundnumtemp = roundnumtemp/10
-            roundnum += 1
-        amount = round((((float(startingcash)/float(tophit['INTBASEPRICE']))/float(
-            tophit['TICKERINTPRICE']))*float(tophit['TICKERBASEPRICE'])), roundnum)
-        time.sleep(0.2)
-        #!code above makes order quantity conform to step size requirements
-        order3 = client.create_order(
-            symbol=tophit['TICKERBASE'],
-            side="SELL",
-            type="MARKET",
-            quantity=amount
-        )
-        #!this needs to be removed it eats up server calls,instead replace it with simulated profits aka totalprof+=tophit['profit']
-        client_info = client.get_account()
-        for x in client_info["balances"]:
-            if x["asset"] == 'USDT':
-                final_usdt = float(x["free"])
-                print("actual profit:"+str(final_usdt-start_usdt) +
-                      " execution time:"+str(time.time() - start_time))
-                break
+            print("waiting for "+tophit['INTBASE']+" to execute at "+tophit['INTBASEPRICE'])
+            order1 = client.get_order(
+            symbol=tophit['INTBASE'],
+            orderId=order1['orderId'])
+            #the code here is forced to wait for the order before it to execute to minimize losses if the opportunity was lost
+            if order1['status']=="FILLED":
+                print(order1)
+                pairInfoResponse = urlopen(
+                    "https://api.binance.com/api/v3/exchangeInfo?symbol="+tophit['TICKERINT'])
+                pairInfo = json.loads(pairInfoResponse.read())
+                stepsize = float(pairInfo["symbols"][0]["filters"][1]["stepSize"])
+                roundnum = 0
+                roundnumtemp = 1
+                while True:
+                    if roundnumtemp == stepsize:
+                        break
+                    roundnumtemp = roundnumtemp/10
+                    roundnum += 1
+                priceinforesponse =urlopen("https://api.binance.com/api/v3/ticker/price?symbol="+tophit['TICKERINT'])
+                priceinfo=json.loads(priceinforesponse.read())
+                order2 = client.create_order(
+                    symbol=tophit['TICKERINT'],
+                    side="BUY",
+                    type="LIMIT",
+                    quantity=float(order1['executedQty']),
+                    timeInForce="GTC",
+                    price=tophit['TICKERINTPRICE']
+                )
+                while True:
+                    print("waiting for "+tophit['TICKERINT']+" to execute at "+tophit['TICKERINTPRICE'])
+                    order2 = client.get_order(
+                    symbol=tophit['INTBASE'],
+                    orderId=order2['orderId'])
+                    if order2['status']=="FILLED":
+                        print(order2)
+                        priceinforesponse =urlopen("https://api.binance.com/api/v3/ticker/price?symbol="+tophit['TICKERBASE'])
+                        priceinfo=json.loads(priceinforesponse.read())
+                        stepsize = float(pairInfo["symbols"][0]["filters"][1]["stepSize"])
+                        roundnum = 0
+                        roundnumtemp = 1
+                        while True:
+                            if roundnumtemp == stepsize:
+                                break
+                            roundnumtemp = roundnumtemp/10
+                            roundnum += 1
+                        priceinforesponse =urlopen("https://api.binance.com/api/v3/ticker/price?symbol="+tophit['TICKERBASE'])
+                        priceinfo=json.loads(priceinforesponse.read())
+                        order3 = client.create_order(
+                            symbol=tophit['TICKERBASE'],
+                            side="SELL",
+                            type="LIMIT",
+                            quantity=float(order2['executedQty']),
+                            timeInForce="GTC",
+                            price=tophit['TICKERBASEPRICE']
+                        )
+                        print(order3)
+                        #at this point the profit has been made but this has been border-line impossible to achieve
+                        #this project came with a great many technical difficulties but atleast the concept is now functional
+                        #but for now i want to stop puting more time into something that has practically no chance of working with all the changes binance is making
+                        #this code is free to use for all who wants it
+
+        break
     else:
         print("Skipping combination")
-        time.sleep(5)
-# @app.route('/dataframe')
-# def dataframe():
-#     data = {}
-#     df = pd.DataFrame(data)
-#     return render_template('dataframe.html', tables=[binanceDf.to_html(classes='data', header="true")])
-# if __name__ == "__main__":
-#     app.run(debug=True)
+        #skips combination if profit too low
